@@ -9,7 +9,7 @@
 # a) If you give it a vector of depths sampled at regular intervals, it carries out abstraction using the broken-stick model
 # b) If you give it a dive that has already been abstracted on-board an SRDL, it works out the order in which the points were added to the abstracted profile 
  
-get.BSMdive <- function(BS.dive=FALSE, detailed.depth, res=4, divetable, breakpoints=4, dn=1, plot=TRUE, dev.new=TRUE, plot.truth=TRUE, plot.bsm=TRUE, cex.axis=1.3, cex.lab=1.3, draw.numbers=TRUE, draw.lines=TRUE){
+get.BSMdive <- function(BS.dive=FALSE, detailed.depth=NULL, res=4, divetable, breakpoints=4, dn=1, plot=TRUE, dev.new=TRUE, plot.truth=TRUE, plot.bsm=TRUE, cex.axis=1.3, cex.lab=1.3, draw.numbers=TRUE, draw.lines=TRUE){
 
 ## ARGUMENTS TO FUNCTION - use args(get.BSMdive) to see the defaults
 # BS.dive: is a logical argument indicating whether the dive data have already been abstracted by the broken-stick model
@@ -27,8 +27,8 @@ get.BSMdive <- function(BS.dive=FALSE, detailed.depth, res=4, divetable, breakpo
 # draw.numbers: is a logical argument and indicates whether you want numbers indicating the order of the points selected by the broken-stick be plotted
 # draw.lines: is a logical argument and indicates whether you want lines to be plotted, one horizontal line at max.depth and one vertical one at the time of max.depth
 
-# make sure your R session uses GMT for all your datetimes unless some other time zone is required
-Sys.setenv(TZ='GMT')
+# make sure your R session uses UTC for all your datetimes unless some other time zone is required
+Sys.setenv(TZ='UTC')
 
 # you want these bins to be open at the top [0, 1575)
 depth.bins <- c(0, 1575, 1612.5, 4762.5, 4837.5, 11137.5, 11287.5, 23887.5)/10
@@ -76,7 +76,7 @@ faulty <- NULL
 
 	} else {
 		
-		if(missing(divetable)){cat("Error: divetable is missing")}	
+		if(is.null(divetable)){cat("Error: divetable is missing")}	
 		divedur.col <- grep("DIVE", names(divetable))
 				
 		tt <- as.numeric(divetable[dn,which(names(divetable)=="T1"):which(names(divetable)=="T4")]) # percent time where BS points occur
@@ -134,7 +134,7 @@ faulty <- NULL
 			
 			}
 						
-		}
+		} # closes a loop
 		
 		sample.depths <- numeric(length(sample.t))
 		for (e in 1:length(bs.dive.time)) { # e <-5
@@ -194,12 +194,14 @@ faulty <- NULL
 	y <- vector(mode="numeric", length=length(times)) # length=max(times)+1)
 
 	for (b in 1:(breakpoints+1)){ # because for 4 points you will get 5 segments
-	
+	  #b <- 2
 		up <- dloc[b+1]
 		lo <- dloc[b]
 				
-				seg.slope <- round((depths[up]-depths[lo])/(times[up]-times[lo]), digits=3)
-				# find the constant (b) in the equation of the line defined by the segment, if the b = y - mx, using y and x at the beginning of the segment 
+		    # sometimes you get two breakpoints in a row, with the same depth. This yields a slope of zero, but if you don't catch it with the ifelse() 
+		    #   you end up with an NaN for seg.slope that gives an error. Added ifelse statement, previously just round() - 20181129
+				seg.slope <- ifelse(depths[up]-depths[lo]==0, 0, round((depths[up]-depths[lo])/(times[up]-times[lo]), digits=3))
+		    # find the constant (b) in the equation of the line defined by the segment, if the b = y - mx, using y and x at the beginning of the segment 
 				seg.b <- round((depths[lo] - seg.slope*times[lo]), digits=3)
 				# create a numeric vector the length of index to hold the y values along the line segment joining the beginning and the end of the segment
 				seg.ind <- c(lo:up)
@@ -237,7 +239,7 @@ faulty <- NULL
 ###############################################
 
 	for (i in 1:ii){ # where ii is equal to ds.col, so that i runs from 1 to 5, forming 5 segments
-		# i <- 3
+		# i <- 1
 		dmax <- rep(0,i) # dmax is going to be a vector of maximum residuals (departures) for the segments being considered
 		imax <- rep(0,i) # imax is going to be a vector of the row indeces for the maximum residuals (departures) for the segments being considered
 
@@ -290,7 +292,7 @@ faulty <- NULL
 		time.depth <- NULL
 		if(breakpoints==4 && ds.col==5){
 			R5.row.index <- which(divetable$RESIDUAL[dn] >= resid.table[,1] & divetable$RESIDUAL[dn] < resid.table[,2])
-			R5.trans <- resid.table[R5.row.index, 3]
+			R5.trans <- ifelse(length(R5.row.index)==0, NA, resid.table[R5.row.index, 3])
 	
 			R.vec[ii] <- R5.trans 
 			
@@ -550,40 +552,40 @@ Xout <- list(Xzones, tempX.lines, BSM, allX.lines)
 	Xzones <- Xout[[1]]; tempX.lines <- Xout[[2]]; BSM <- Xout[[3]]; allX.lines <- Xout[[4]]
 
 
-################################################################################ older version where bins were only added to zone at the last breakpoint
-	# Incorporating Rmax in dive zone 
-	t.Rmax <- s[R.index+1,R.index+1,1]
-	Rmax.LO <- Xzones[t.Rmax, (2*(ii-1)-1)]==BS.time.depth[s[R.index+1,R.index+1,1],2] # find the row in the Xzone matrix where the lower boundary touches the dive path
-	Rmax.UP <- Xzones[t.Rmax, (2*(ii-1))]==BS.time.depth[s[R.index+1,R.index+1,1],2] # find the row in the Xzone matrix where the upper boundary touches the dive path
-		
-		if(Rmax.LO == TRUE){ # if its not 0, ie TRUE outcome to trial, it means this is the side of the zone the last BS point touches, so dont change anything in the LOWER BOUNDARY and bring the UPPER BOUNDARY up to the depth + step.size for its relevant depth bin
-			
-			Rmax.UP <- BS.time.depth[t.Rmax,2] + step.size.vec[BS.order==R.index]
-			Xzones[t.Rmax, (2*(ii-1))] <- Rmax.UP
-		
-		} else { # if its not 0 it means this is the side of the zone the last BS point touches, so bring the LOWER BOUNDARY down to the shallow end of its relevant depth bin, and increase the UPPER BOUNDARY to the deep end of its relevant depth bin
-			
-			Rmax.LO <- BS.time.depth[s[R.index+1,R.index+1,1],2]
-			Rmax.UP <- BS.time.depth[s[R.index+1,R.index+1,1],2] + step.size.vec[BS.order==R.index]
-			
-			# sometimes you will have two points in a dive that touch a boundary. to stop this causing problems I'm going to make it that one of those points gets picked randomly. it only really serves to create the boundary so it should be ok to do it like this. 20140204
-	
-			if(length(Rmax.LO)>1 | length(Rmax.UP)>1){
-				Rmax.LO <- Rmax.LO[1]
-				Rmax.UP <- Rmax.UP[1]
-			}
-
-			Xzones[t.Rmax, (2*(ii-1)-1)] <- Rmax.LO
-			Xzones[t.Rmax, (2*(ii-1))] <- Rmax.UP
-			
-			} # closes if(Rmax.LO == TRUE)
-################################################################################
+# ################################################################################ older version where bins were only added to zone at the last breakpoint
+# 	# Incorporating Rmax in dive zone 
+# 	t.Rmax <- s[R.index+1,R.index+1,1]
+# 	Rmax.LO <- Xzones[t.Rmax, (2*(ii-1)-1)]==BS.time.depth[s[R.index+1,R.index+1,1],2] # find the row in the Xzone matrix where the lower boundary touches the dive path
+# 	Rmax.UP <- Xzones[t.Rmax, (2*(ii-1))]==BS.time.depth[s[R.index+1,R.index+1,1],2] # find the row in the Xzone matrix where the upper boundary touches the dive path
+# 		
+# 		if(Rmax.LO == TRUE){ # if its not 0, ie TRUE outcome to trial, it means this is the side of the zone the last BS point touches, so dont change anything in the LOWER BOUNDARY and bring the UPPER BOUNDARY up to the depth + step.size for its relevant depth bin
+# 			
+# 			Rmax.UP <- BS.time.depth[t.Rmax,2] + step.size.vec[BS.order==R.index]
+# 			Xzones[t.Rmax, (2*(ii-1))] <- Rmax.UP
+# 		
+# 		} else { # if its not 0 it means this is the side of the zone the last BS point touches, so bring the LOWER BOUNDARY down to the shallow end of its relevant depth bin, and increase the UPPER BOUNDARY to the deep end of its relevant depth bin
+# 			
+# 			Rmax.LO <- BS.time.depth[s[R.index+1,R.index+1,1],2]
+# 			Rmax.UP <- BS.time.depth[s[R.index+1,R.index+1,1],2] + step.size.vec[BS.order==R.index]
+# 			
+# 			# sometimes you will have two points in a dive that touch a boundary. to stop this causing problems I'm going to make it that one of those points gets picked randomly. it only really serves to create the boundary so it should be ok to do it like this. 20140204
+# 	
+# 			if(length(Rmax.LO)>1 | length(Rmax.UP)>1){
+# 				Rmax.LO <- Rmax.LO[1]
+# 				Rmax.UP <- Rmax.UP[1]
+# 			}
+# 
+# 			Xzones[t.Rmax, (2*(ii-1)-1)] <- Rmax.LO
+# 			Xzones[t.Rmax, (2*(ii-1))] <- Rmax.UP
+# 			
+# 			} # closes if(Rmax.LO == TRUE)
+# ################################################################################
 
 ################################################################################ newer version where bins are added to zone at all breakpoints 20141112
 
 	allR.index <- c(1:(R.index-1))
 	for(tRm in allR.index){
-	# tRm <- 1
+	# tRm <- 3
 	t.Rmax <- s[tRm+1, tRm+1,1]; t.Rmax
 	
 	bsm.LO <- BS.time.depth[s[tRm+1,tRm+1,1],2]
@@ -717,6 +719,7 @@ return(out)
 
 ################ xzone.wrapper
 # This wrapper function lets you run the abstraction and/or the dive zone function(s) on whole datasets of dives, in "SMRU divetable" form
+# This function really needs to be made more efficient (20181202)
 
 xzone.wrapper <- function(BS.dive=TRUE, divetable=divetable, start.dive, end.dive, breakpoints=4, plot.bsm=FALSE, plot.xzone=TRUE, cex.axis=1.3, cex.lab=1.3){
 	
@@ -746,12 +749,14 @@ xlines <- matrix(data=NA, nrow=length(diveseq), ncol=2)
 	 	
 	 	bsm <- try(get.BSMdive(BS.dive=TRUE, divetable=divetable, breakpoints=breakpoints, dn=diveseq[i], dev.new=FALSE, plot=plot.bsm, plot.truth=FALSE, cex.axis=cex.axis, cex.lab=cex.lab), silent=TRUE)
 	 	
-	 	if (class(bsm)=="try-error") {faulty[i] <- TRUE; dzi[i] <- "NA"; Rt.vec[i] <- "NA"} else {
+	 	if (class(bsm)=="try-error") {faulty[i] <- TRUE; dzi[i] <- NA; Rt.vec[i] <- NA} else {
 
 		 	divetimes[[i]] <- bsm$BS.time.depth$times
 		 	divedepths[[i]] <- bsm$BS.time.depth$depths
 		 	diveid[[i]] <- rep(paste("dive",diveseq[i],sep=""), nrow(bsm$BS.time.depth))
-			starttime[i] <- as.POSIXct(divetable$DE.DATE[i]-divetable$DIVE.DUR[i])
+		 	
+		 	dedate.col <- grep("DATE", names(divetable)); divedur.col <- grep("DIVE", names(divetable));
+			starttime[i] <- as.POSIXct(divetable[i,dedate.col]-divetable[i,divedur.col])
 			ts <- as.POSIXct(starttime[i], origin="1970-01-01 00:00:00")+divetimes[[i]]*60
 			divetimes[[i]] <- ts
 		
@@ -766,7 +771,7 @@ xlines <- matrix(data=NA, nrow=length(diveseq), ncol=2)
 	
 	}	
 	
-	 out.t <- data.frame(ref=divetable$ref[diveseq], dive=diveseq, Rmax=as.numeric(Rt.vec), DZI=as.numeric(dzi))
+	 out.t <- data.frame(ref=divetable$ref[diveseq], dive=diveseq, Rmax=Rt.vec, DZI=dzi)
 out <- list(dives=out.t, faulty=which(faulty))
 return(out)
 
